@@ -1,24 +1,43 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Send, User, Bot } from "lucide-react";
 
-export default function Home() {
+interface Message {
+  id: number;
+  sender: "user" | "bot";
+  text: string;
+}
+
+export default function ChatRoom() {
   const [prompt, setPrompt] = useState("");
-  const [answer, setAnswer] = useState("");
-  const [displayedAnswer, setDisplayedAnswer] = useState(""); // teks yang sedang diketik
+  const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [thinking, setThinking] = useState(false); // status berpikir
 
-  async function handleGenerate(e?: React.FormEvent) {
+  // Ambil riwayat obrolan dari localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem("amerta_chat_history");
+    if (saved) setMessages(JSON.parse(saved));
+  }, []);
+
+  // Simpan obrolan ke localStorage setiap ada perubahan
+  useEffect(() => {
+    localStorage.setItem("amerta_chat_history", JSON.stringify(messages));
+  }, [messages]);
+
+  async function handleSend(e?: React.FormEvent) {
     e?.preventDefault();
     if (!prompt.trim()) return;
 
+    const newMsg: Message = {
+      id: Date.now(),
+      sender: "user",
+      text: prompt,
+    };
+
+    setMessages((prev) => [...prev, newMsg]);
+    setPrompt("");
     setLoading(true);
-    setThinking(true);
-    setError(null);
-    setAnswer("");
-    setDisplayedAnswer("");
 
     try {
       const res = await fetch("/api/generate", {
@@ -30,93 +49,113 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Terjadi kesalahan");
 
-      // Simpan hasil untuk efek typing
-      setAnswer(data.output);
+      const botMsg: Message = {
+        id: Date.now() + 1,
+        sender: "bot",
+        text: data.output,
+      };
+
+      setMessages((prev) => [...prev, botMsg]);
     } catch (err: any) {
-      setError(err.message);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now() + 2,
+          sender: "bot",
+          text: `❌ Error: ${err.message}`,
+        },
+      ]);
     } finally {
       setLoading(false);
-      setThinking(false);
     }
   }
 
-  // Efek teks berjalan (typing)
-  useEffect(() => {
-    if (!answer) return;
-
-    let i = 0;
-    setDisplayedAnswer("");
-    const interval = setInterval(() => {
-      setDisplayedAnswer((prev) => prev + answer[i]);
-      i++;
-      if (i >= answer.length) clearInterval(interval);
-    }, 20); // kecepatan ketikan (20ms per karakter)
-
-    return () => clearInterval(interval);
-  }, [answer]);
-
-  // Deteksi Enter
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleGenerate();
-    }
+  function handleNewChat() {
+    setMessages([]);
+    localStorage.removeItem("amerta_chat_history");
   }
 
   return (
-    <main
-      className="min-h-screen flex flex-col items-center justify-center p-6"
-      style={{
-        background: "linear-gradient(135deg, #a7c7e7, #c7a7e7, #f8c8dc)",
-      }}
-    >
-      <div className="max-w-2xl w-full bg-white/60 backdrop-blur-md rounded-2xl shadow-xl p-8 space-y-6 border border-white/30">
-        <h1 className="text-3xl font-extrabold text-center text-transparent bg-clip-text bg-gradient-to-r from-purple-500 via-pink-400 to-blue-400 animate-pulse">
-          Amerta AI
-        </h1>
+    <main className="min-h-screen flex flex-col bg-gradient-to-br from-purple-100 via-pink-100 to-blue-100">
+      {/* Header */}
+      <header className="flex justify-between items-center p-4 bg-white/70 backdrop-blur-md border-b">
+        <h1 className="text-2xl font-bold text-purple-600">💬 A Amerta Chat</h1>
+        <button
+          onClick={handleNewChat}
+          className="px-4 py-2 bg-gradient-to-r from-purple-400 to-pink-400 text-white rounded-lg hover:opacity-90 transition"
+        >
+          + Chat Baru
+        </button>
+      </header>
 
-        <form onSubmit={handleGenerate} className="space-y-4">
-          <textarea
-            className="w-full p-4 border-2 border-transparent focus:border-purple-400 focus:ring-2 focus:ring-pink-300 rounded-lg bg-white/80 text-gray-700 placeholder-gray-500 transition-all"
-            rows={5}
-            placeholder="Tulis pertanyaanmu di sini…"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={handleKeyDown}
-          />
+      {/* Area Chat */}
+      <section className="flex-1 overflow-y-auto p-6 space-y-4">
+        {messages.length === 0 && (
+          <p className="text-center text-gray-500 italic">
+            Belum ada percakapan. Mulai ngobrol ✨
+          </p>
+        )}
 
-          <button
-            type="submit"
-            className="w-full py-3 rounded-lg font-semibold text-white bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 hover:opacity-90 transition disabled:opacity-60"
-            disabled={loading || !prompt.trim()}
+        {messages.map((msg) => (
+          <div
+            key={msg.id}
+            className={`flex items-start space-x-3 ${
+              msg.sender === "user" ? "justify-end" : "justify-start"
+            }`}
           >
-            {loading ? "Meminta jawaban…" : "Kirim ke Gemini"}
-          </button>
-        </form>
+            {msg.sender === "bot" && (
+              <div className="w-8 h-8 bg-gradient-to-br from-purple-400 to-blue-400 rounded-full flex items-center justify-center text-white shadow-md">
+                <Bot size={18} />
+              </div>
+            )}
 
-        {/* Indikator berpikir */}
-        {thinking && (
-          <p className="text-center text-purple-500 animate-pulse font-medium">
-            💭 Gemini sedang berpikir...
-          </p>
-        )}
+            <div
+              className={`max-w-[70%] p-3 rounded-2xl text-sm ${
+                msg.sender === "user"
+                  ? "bg-gradient-to-r from-blue-400 to-purple-400 text-white rounded-br-none"
+                  : "bg-white text-gray-800 border border-gray-200 rounded-bl-none"
+              }`}
+            >
+              {msg.text}
+            </div>
 
-        {error && (
-          <p className="text-red-600 bg-red-50 border border-red-200 p-3 rounded-lg">
-            Error: {error}
-          </p>
-        )}
+            {msg.sender === "user" && (
+              <div className="w-8 h-8 bg-gradient-to-br from-pink-400 to-purple-400 rounded-full flex items-center justify-center text-white shadow-md">
+                <User size={18} />
+              </div>
+            )}
+          </div>
+        ))}
 
-        {/* Teks berjalan */}
-        {displayedAnswer && (
-          <section className="p-5 rounded-xl bg-gradient-to-br from-white/70 to-white/40 border border-white/50 backdrop-blur-md shadow-inner">
-            <h2 className="font-semibold mb-2 text-purple-600">💡 Jawaban</h2>
-            <pre className="whitespace-pre-wrap text-gray-800">
-              {displayedAnswer}
-            </pre>
-          </section>
+        {loading && (
+          <div className="flex items-center space-x-2 text-purple-500">
+            <span className="animate-bounce">💭</span>
+            <p>Gemini sedang berpikir...</p>
+          </div>
         )}
-      </div>
+      </section>
+
+      {/* Input Chat */}
+      <form
+        onSubmit={handleSend}
+        className="flex items-center gap-3 p-4 bg-white/80 backdrop-blur-md border-t"
+      >
+        <textarea
+          className="flex-1 resize-none p-3 border-2 border-transparent focus:border-purple-400 focus:ring-2 focus:ring-pink-300 rounded-lg bg-white/90 text-gray-700 placeholder-gray-500 transition-all"
+          rows={1}
+          placeholder="Tulis pesan..."
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+        />
+
+        <button
+          type="submit"
+          disabled={loading || !prompt.trim()}
+          className="p-3 rounded-full bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 text-white hover:opacity-90 transition disabled:opacity-50"
+        >
+          <Send size={20} />
+        </button>
+      </form>
     </main>
   );
 }
